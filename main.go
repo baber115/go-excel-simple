@@ -8,9 +8,6 @@ import (
 	"strings"
 )
 
-var chineseRules = []string{
-	"外勤", "外出", "病假", "年假", "调休", "补卡", "事假", "婚假", "产假", "丧假", "哺乳假", "产检", "体检", "年休",
-}
 var sheetName = "打卡时间"
 var before = 0
 var after = 0
@@ -45,6 +42,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	setTitle(f)
 	for i, row := range rows {
 		if i == 0 {
 			continue
@@ -52,32 +50,37 @@ func main() {
 		delay, after, before = 0, 0, 0
 		for j, colCell := range row {
 			cellName, _ := excelize.CoordinatesToCellName(j+1, i+1)
-			if colCell == "" || checkChinese(&colCell) {
-				setColor(f, cellName)
-			} else {
-				if handle(colCell) == false {
-					setColor(f, cellName)
-				}
+			if colCell == "" || isFullChinese(colCell) {
+				setColor(f, cellName, "FFFF00")
+				continue
+			}
+			color := handle(colCell)
+			if color != "" {
+				setColor(f, cellName, color)
 			}
 		}
 		setCount(f, i+1)
 	}
 }
 
-func handle(cell string) bool {
+func handle(cell string) (color string) {
 	cell = strings.TrimSpace(cell)
 	re := regexp.MustCompile(`\s+`)
 	output := re.ReplaceAllString(cell, "\n")
-
 	explode := strings.Split(output, "\n")
 	count := len(explode)
-	if count == 1 {
-		return false
+	if count > 2 {
+		color = "FFA500"
 	}
 	for i, v := range explode {
+		if checkChinese(v) {
+			color = "FFA500"
+			continue
+		}
 		v = strings.ReplaceAll(v, ":", "")
 		v, _ := strconv.Atoi(v)
 		if v > 900 && i == 0 {
+			color = "FF0000"
 			delay++
 		} else if v <= 850 {
 			before++
@@ -85,20 +88,11 @@ func handle(cell string) bool {
 			after++
 		}
 	}
-	return true
+	return
 }
 
-func checkChinese(s *string) bool {
-	for _, v := range chineseRules {
-		if strings.Contains(*s, v) {
-			*s = strings.ReplaceAll(*s, v, "")
-			fmt.Println(*s)
-			return false
-		}
-	}
-
-	//return strings.Contains(s, "外勤")
-	for _, r := range *s {
+func checkChinese(s string) bool {
+	for _, r := range s {
 		if r >= 0x4E00 && r <= 0x9FFF {
 			return true
 		}
@@ -106,12 +100,24 @@ func checkChinese(s *string) bool {
 	return false
 }
 
-func setColor(f *excelize.File, cellName string) {
+func isFullChinese(s string) bool {
+	v := strings.ReplaceAll(s, ":", "")
+	v = strings.ReplaceAll(v, "\n", "")
+	v = strings.ReplaceAll(v, " ", "")
+	for _, r := range v {
+		if r < 0x4E00 || r > 0x9FFF {
+			return false
+		}
+	}
+	return true
+}
+
+func setColor(f *excelize.File, cellName string, color string) {
 	style, err := f.NewStyle(&excelize.Style{
 		Fill: excelize.Fill{
 			Type:    "pattern",
 			Pattern: 1,
-			Color:   []string{"FFFF00"}, // 黄色
+			Color:   []string{color}, // 黄色
 		},
 	})
 	if err != nil {
@@ -123,16 +129,20 @@ func setColor(f *excelize.File, cellName string) {
 	}
 }
 
+func setTitle(f *excelize.File) {
+	setCountValue(f, fmt.Sprintf("%s%d", "AB", 1), "早到次数")
+	setCountValue(f, fmt.Sprintf("%s%d", "AC", 1), "晚走次数")
+	setCountValue(f, fmt.Sprintf("%s%d", "AD", 1), "迟到次数")
+}
+
 func setCount(f *excelize.File, row int) {
-	err := f.SetCellValue(sheetName, fmt.Sprintf("%s%d", "Y", row), before)
-	if err != nil {
-		fmt.Println(err)
-	}
-	err = f.SetCellValue(sheetName, fmt.Sprintf("%s%d", "Z", row), after)
-	if err != nil {
-		fmt.Println(err)
-	}
-	err = f.SetCellValue(sheetName, fmt.Sprintf("%s%d", "AA", row), delay)
+	setCountValue(f, fmt.Sprintf("%s%d", "AB", row), before)
+	setCountValue(f, fmt.Sprintf("%s%d", "AC", row), after)
+	setCountValue(f, fmt.Sprintf("%s%d", "AD", row), delay)
+}
+
+func setCountValue(f *excelize.File, column string, value interface{}) {
+	err := f.SetCellValue(sheetName, column, value)
 	if err != nil {
 		fmt.Println(err)
 	}
