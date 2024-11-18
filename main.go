@@ -13,6 +13,19 @@ var before = 0
 var after = 0
 var delay = 0
 
+var vacation = []string{
+	"早到次数",
+	"晚走次数",
+	"迟到次数",
+	"年假",
+	"婚假",
+	"病假",
+	"调休",
+	"事假",
+	"产假",
+	"丧假",
+}
+
 var filename string
 
 func init() {
@@ -37,19 +50,25 @@ func main() {
 			fmt.Println(err)
 		}
 	}()
-	rows, err := f.GetRows(sheetName)
-	if err != nil {
-		fmt.Println(err)
-		return
+	rowOptions := excelize.Options{
+		RawCellValue: true,
 	}
-	setTitle(f)
-	for i, row := range rows {
-		if i == 0 {
-			continue
-		}
+	rows, _ := f.GetRows(sheetName, rowOptions)
+	cols, _ := f.GetCols(sheetName)
+	rowLen := len(rows)
+	colLen := len(cols)
+	setTitle(f, colLen)
+	for i := 1; i < rowLen; i++ {
 		delay, after, before = 0, 0, 0
-		for j, colCell := range row {
+		vacationDays := map[string][]string{}
+
+		for j := 2; j < colLen; j++ {
 			cellName, _ := excelize.CoordinatesToCellName(j+1, i+1)
+			colCell, _ := f.GetCellValue(sheetName, cellName)
+			str := isVacation(colCell)
+			if str != "" {
+				vacationDays[str] = append(vacationDays[str], rows[0][j])
+			}
 			if colCell == "" || isFullChinese(colCell) {
 				setColor(f, cellName, "FFFF00")
 				continue
@@ -59,7 +78,8 @@ func main() {
 				setColor(f, cellName, color)
 			}
 		}
-		setCount(f, i+1)
+		setValidation(f, colLen, i, vacationDays)
+		setCount(f, colLen, i)
 	}
 }
 
@@ -112,6 +132,16 @@ func isFullChinese(s string) bool {
 	return true
 }
 
+func isVacation(str string) string {
+	for _, v := range vacation {
+		if strings.Count(str, v) >= 2 {
+			return v
+		}
+	}
+
+	return ""
+}
+
 func setColor(f *excelize.File, cellName string, color string) {
 	style, err := f.NewStyle(&excelize.Style{
 		Fill: excelize.Fill{
@@ -129,16 +159,28 @@ func setColor(f *excelize.File, cellName string, color string) {
 	}
 }
 
-func setTitle(f *excelize.File) {
-	setCountValue(f, fmt.Sprintf("%s%d", "AB", 1), "早到次数")
-	setCountValue(f, fmt.Sprintf("%s%d", "AC", 1), "晚走次数")
-	setCountValue(f, fmt.Sprintf("%s%d", "AD", 1), "迟到次数")
+func setTitle(f *excelize.File, colLen int) {
+	for k, v := range vacation {
+		celName, _ := excelize.CoordinatesToCellName(colLen+k+1, 1)
+		setCountValue(f, celName, v)
+	}
 }
 
-func setCount(f *excelize.File, row int) {
-	setCountValue(f, fmt.Sprintf("%s%d", "AB", row), before)
-	setCountValue(f, fmt.Sprintf("%s%d", "AC", row), after)
-	setCountValue(f, fmt.Sprintf("%s%d", "AD", row), delay)
+func setCount(f *excelize.File, colLen int, row int) {
+	for k, v := range []int{before, after, delay} {
+		celName, _ := excelize.CoordinatesToCellName(colLen+k+1, row+1)
+		setCountValue(f, celName, v)
+	}
+}
+
+func setValidation(f *excelize.File, colLen int, row int, validationDays map[string][]string) {
+	for k, v := range vacation {
+		if days, exists := validationDays[v]; exists {
+			day := strings.Join(days, "、")
+			celName, _ := excelize.CoordinatesToCellName(colLen+k+1, row+1)
+			setCountValue(f, celName, day)
+		}
+	}
 }
 
 func setCountValue(f *excelize.File, column string, value interface{}) {
