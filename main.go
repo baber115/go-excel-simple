@@ -134,7 +134,7 @@ func isFullChinese(s string) bool {
 
 func isVacation(str string) string {
 	for _, v := range vacation {
-		if strings.Count(str, v) >= 2 {
+		if strings.Count(str, v) >= 1 {
 			return v
 		}
 	}
